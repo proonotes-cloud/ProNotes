@@ -1054,6 +1054,13 @@ const gp=new firebase.auth.GoogleAuthProvider();
 
 var pdfText='',hours=3,currentPlan=null;
 
+// Handle redirect result on page load
+auth.getRedirectResult().then(result=>{
+  // handled by onAuthStateChanged
+}).catch(e=>{
+  if(e.code !== 'auth/no-current-user') console.log('redirect err',e);
+});
+
 auth.onAuthStateChanged(u=>{
   window.currentUser=u;
   if(u){
@@ -1080,7 +1087,7 @@ auth.onAuthStateChanged(u=>{
 });
 
 function signIn(){
-  auth.signInWithPopup(gp).catch(e=>alert('Sign in failed: '+e.message));
+  auth.signInWithRedirect(gp).catch(e=>alert('Sign in failed: '+e.message));
 }
 
 function showPage(id){
