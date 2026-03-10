@@ -4,10 +4,562 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ProNotes — AI Study Planner</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js">
+// ===== ONBOARDING =====
+var obStep=0;
+var obData={};
+var obQuestions=[
+  {
+    id:'class',
+    title:'What class are you in?',
+    sub:'We'll tailor your study plans to your curriculum.',
+    type:'options',
+    options:[
+      {ic:'📗',label:'Class 9'},
+      {ic:'📘',label:'Class 10'},
+      {ic:'📙',label:'Class 11'},
+      {ic:'📕',label:'Class 12'},
+      {ic:'🎓',label:'College 1st yr'},
+      {ic:'🏫',label:'College 2nd yr+'},
+    ]
+  },
+  {
+    id:'board',
+    title:'Which board do you follow?',
+    sub:'This helps us match your syllabus perfectly.',
+    type:'options',
+    options:[
+      {ic:'🇮🇳',label:'CBSE'},
+      {ic:'📋',label:'ICSE'},
+      {ic:'🏛️',label:'State Board'},
+      {ic:'🌍',label:'IB/Cambridge'},
+      {ic:'🎓',label:'University'},
+      {ic:'🤷',label:'Other'},
+    ]
+  },
+  {
+    id:'goal',
+    title:'What's your main goal?',
+    sub:'We'll focus your plans around what matters most.',
+    type:'options',
+    options:[
+      {ic:'🏆',label:'Ace exams'},
+      {ic:'📈',label:'Improve grades'},
+      {ic:'⏰',label:'Stop procrastinating'},
+      {ic:'🧠',label:'Actually understand'},
+      {ic:'🎯',label:'Get into college'},
+      {ic:'😤',label:'Stress less'},
+    ]
+  },
+  {
+    id:'hoursPerDay',
+    title:'How many hours can you study daily?',
+    sub:'Be honest — we'll build a realistic plan.',
+    type:'options',
+    options:[
+      {ic:'😴',label:'1-2 hours'},
+      {ic:'📚',label:'2-4 hours'},
+      {ic:'💪',label:'4-6 hours'},
+      {ic:'🔥',label:'6+ hours'},
+    ]
+  },
+  {
+    id:'location',
+    title:'Where are you from?',
+    sub:'We'll use local textbooks and exam patterns.',
+    type:'input',
+    placeholder:'City or State (e.g. Mumbai, Delhi, Chennai...)',
+  }
+];
+
+function startOnboarding(){
+  obStep=0;
+  obData={};
+  renderObStep();
+}
+
+function renderObStep(){
+  var q=obQuestions[obStep];
+  var pct=((obStep)/obQuestions.length*100);
+  document.getElementById('obFill').style.width=pct+'%';
+
+  var html=`<div class="ob-q">
+    <div class="ob-steps">${obQuestions.map((_,i)=>`<div class="ob-step-dot ${i<obStep?'done':i===obStep?'act':''}"></div>`).join('')}</div>
+    <div class="ob-q-title">${q.title}</div>
+    <div class="ob-q-sub">${q.sub}</div>`;
+
+  if(q.type==='options'){
+    html+=`<div class="ob-options" id="obOpts">`;
+    q.options.forEach((o,i)=>{
+      html+=`<div class="ob-opt" onclick="selectOb(this,'${o.label}')"><span class="opt-ic">${o.ic}</span>${o.label}</div>`;
+    });
+    html+=`</div>
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  } else {
+    html+=`<input class="ob-inp" id="obInp" type="text" placeholder="${q.placeholder}" oninput="document.getElementById('obNextBtn').disabled=this.value.trim().length<2">
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  }
+
+  if(obStep>0) html+=`<button class="ob-skip" onclick="obStep--;renderObStep()">← Back</button>`;
+  else html+=`<button class="ob-skip" onclick="finishOnboarding()">Skip for now</button>`;
+
+  html+='</div>';
+  document.getElementById('obContent').innerHTML=html;
+}
+
+function selectOb(el,val){
+  document.querySelectorAll('.ob-opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  obData[obQuestions[obStep].id]=val;
+  document.getElementById('obNextBtn').disabled=false;
+}
+
+function nextObStep(){
+  var q=obQuestions[obStep];
+  if(q.type==='input'){
+    var v=document.getElementById('obInp').value.trim();
+    if(v) obData[q.id]=v;
+  }
+  obStep++;
+  if(obStep>=obQuestions.length){
+    finishOnboarding();
+  } else {
+    renderObStep();
+  }
+}
+
+function finishOnboarding(){
+  if(window.currentUser){
+    localStorage.setItem('pn_onboard_'+window.currentUser.uid, JSON.stringify(obData));
+    // Save to Firestore too
+    db.collection('users').doc(window.currentUser.uid).set({profile:obData},{merge:true}).catch(()=>{});
+  }
+  // Animate out
+  document.getElementById('obFill').style.width='100%';
+  setTimeout(()=>{
+    showPage('pageDash');
+    loadPlans();
+  },600);
+}
+
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js">
+// ===== ONBOARDING =====
+var obStep=0;
+var obData={};
+var obQuestions=[
+  {
+    id:'class',
+    title:'What class are you in?',
+    sub:'We'll tailor your study plans to your curriculum.',
+    type:'options',
+    options:[
+      {ic:'📗',label:'Class 9'},
+      {ic:'📘',label:'Class 10'},
+      {ic:'📙',label:'Class 11'},
+      {ic:'📕',label:'Class 12'},
+      {ic:'🎓',label:'College 1st yr'},
+      {ic:'🏫',label:'College 2nd yr+'},
+    ]
+  },
+  {
+    id:'board',
+    title:'Which board do you follow?',
+    sub:'This helps us match your syllabus perfectly.',
+    type:'options',
+    options:[
+      {ic:'🇮🇳',label:'CBSE'},
+      {ic:'📋',label:'ICSE'},
+      {ic:'🏛️',label:'State Board'},
+      {ic:'🌍',label:'IB/Cambridge'},
+      {ic:'🎓',label:'University'},
+      {ic:'🤷',label:'Other'},
+    ]
+  },
+  {
+    id:'goal',
+    title:'What's your main goal?',
+    sub:'We'll focus your plans around what matters most.',
+    type:'options',
+    options:[
+      {ic:'🏆',label:'Ace exams'},
+      {ic:'📈',label:'Improve grades'},
+      {ic:'⏰',label:'Stop procrastinating'},
+      {ic:'🧠',label:'Actually understand'},
+      {ic:'🎯',label:'Get into college'},
+      {ic:'😤',label:'Stress less'},
+    ]
+  },
+  {
+    id:'hoursPerDay',
+    title:'How many hours can you study daily?',
+    sub:'Be honest — we'll build a realistic plan.',
+    type:'options',
+    options:[
+      {ic:'😴',label:'1-2 hours'},
+      {ic:'📚',label:'2-4 hours'},
+      {ic:'💪',label:'4-6 hours'},
+      {ic:'🔥',label:'6+ hours'},
+    ]
+  },
+  {
+    id:'location',
+    title:'Where are you from?',
+    sub:'We'll use local textbooks and exam patterns.',
+    type:'input',
+    placeholder:'City or State (e.g. Mumbai, Delhi, Chennai...)',
+  }
+];
+
+function startOnboarding(){
+  obStep=0;
+  obData={};
+  renderObStep();
+}
+
+function renderObStep(){
+  var q=obQuestions[obStep];
+  var pct=((obStep)/obQuestions.length*100);
+  document.getElementById('obFill').style.width=pct+'%';
+
+  var html=`<div class="ob-q">
+    <div class="ob-steps">${obQuestions.map((_,i)=>`<div class="ob-step-dot ${i<obStep?'done':i===obStep?'act':''}"></div>`).join('')}</div>
+    <div class="ob-q-title">${q.title}</div>
+    <div class="ob-q-sub">${q.sub}</div>`;
+
+  if(q.type==='options'){
+    html+=`<div class="ob-options" id="obOpts">`;
+    q.options.forEach((o,i)=>{
+      html+=`<div class="ob-opt" onclick="selectOb(this,'${o.label}')"><span class="opt-ic">${o.ic}</span>${o.label}</div>`;
+    });
+    html+=`</div>
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  } else {
+    html+=`<input class="ob-inp" id="obInp" type="text" placeholder="${q.placeholder}" oninput="document.getElementById('obNextBtn').disabled=this.value.trim().length<2">
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  }
+
+  if(obStep>0) html+=`<button class="ob-skip" onclick="obStep--;renderObStep()">← Back</button>`;
+  else html+=`<button class="ob-skip" onclick="finishOnboarding()">Skip for now</button>`;
+
+  html+='</div>';
+  document.getElementById('obContent').innerHTML=html;
+}
+
+function selectOb(el,val){
+  document.querySelectorAll('.ob-opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  obData[obQuestions[obStep].id]=val;
+  document.getElementById('obNextBtn').disabled=false;
+}
+
+function nextObStep(){
+  var q=obQuestions[obStep];
+  if(q.type==='input'){
+    var v=document.getElementById('obInp').value.trim();
+    if(v) obData[q.id]=v;
+  }
+  obStep++;
+  if(obStep>=obQuestions.length){
+    finishOnboarding();
+  } else {
+    renderObStep();
+  }
+}
+
+function finishOnboarding(){
+  if(window.currentUser){
+    localStorage.setItem('pn_onboard_'+window.currentUser.uid, JSON.stringify(obData));
+    // Save to Firestore too
+    db.collection('users').doc(window.currentUser.uid).set({profile:obData},{merge:true}).catch(()=>{});
+  }
+  // Animate out
+  document.getElementById('obFill').style.width='100%';
+  setTimeout(()=>{
+    showPage('pageDash');
+    loadPlans();
+  },600);
+}
+
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js">
+// ===== ONBOARDING =====
+var obStep=0;
+var obData={};
+var obQuestions=[
+  {
+    id:'class',
+    title:'What class are you in?',
+    sub:'We'll tailor your study plans to your curriculum.',
+    type:'options',
+    options:[
+      {ic:'📗',label:'Class 9'},
+      {ic:'📘',label:'Class 10'},
+      {ic:'📙',label:'Class 11'},
+      {ic:'📕',label:'Class 12'},
+      {ic:'🎓',label:'College 1st yr'},
+      {ic:'🏫',label:'College 2nd yr+'},
+    ]
+  },
+  {
+    id:'board',
+    title:'Which board do you follow?',
+    sub:'This helps us match your syllabus perfectly.',
+    type:'options',
+    options:[
+      {ic:'🇮🇳',label:'CBSE'},
+      {ic:'📋',label:'ICSE'},
+      {ic:'🏛️',label:'State Board'},
+      {ic:'🌍',label:'IB/Cambridge'},
+      {ic:'🎓',label:'University'},
+      {ic:'🤷',label:'Other'},
+    ]
+  },
+  {
+    id:'goal',
+    title:'What's your main goal?',
+    sub:'We'll focus your plans around what matters most.',
+    type:'options',
+    options:[
+      {ic:'🏆',label:'Ace exams'},
+      {ic:'📈',label:'Improve grades'},
+      {ic:'⏰',label:'Stop procrastinating'},
+      {ic:'🧠',label:'Actually understand'},
+      {ic:'🎯',label:'Get into college'},
+      {ic:'😤',label:'Stress less'},
+    ]
+  },
+  {
+    id:'hoursPerDay',
+    title:'How many hours can you study daily?',
+    sub:'Be honest — we'll build a realistic plan.',
+    type:'options',
+    options:[
+      {ic:'😴',label:'1-2 hours'},
+      {ic:'📚',label:'2-4 hours'},
+      {ic:'💪',label:'4-6 hours'},
+      {ic:'🔥',label:'6+ hours'},
+    ]
+  },
+  {
+    id:'location',
+    title:'Where are you from?',
+    sub:'We'll use local textbooks and exam patterns.',
+    type:'input',
+    placeholder:'City or State (e.g. Mumbai, Delhi, Chennai...)',
+  }
+];
+
+function startOnboarding(){
+  obStep=0;
+  obData={};
+  renderObStep();
+}
+
+function renderObStep(){
+  var q=obQuestions[obStep];
+  var pct=((obStep)/obQuestions.length*100);
+  document.getElementById('obFill').style.width=pct+'%';
+
+  var html=`<div class="ob-q">
+    <div class="ob-steps">${obQuestions.map((_,i)=>`<div class="ob-step-dot ${i<obStep?'done':i===obStep?'act':''}"></div>`).join('')}</div>
+    <div class="ob-q-title">${q.title}</div>
+    <div class="ob-q-sub">${q.sub}</div>`;
+
+  if(q.type==='options'){
+    html+=`<div class="ob-options" id="obOpts">`;
+    q.options.forEach((o,i)=>{
+      html+=`<div class="ob-opt" onclick="selectOb(this,'${o.label}')"><span class="opt-ic">${o.ic}</span>${o.label}</div>`;
+    });
+    html+=`</div>
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  } else {
+    html+=`<input class="ob-inp" id="obInp" type="text" placeholder="${q.placeholder}" oninput="document.getElementById('obNextBtn').disabled=this.value.trim().length<2">
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  }
+
+  if(obStep>0) html+=`<button class="ob-skip" onclick="obStep--;renderObStep()">← Back</button>`;
+  else html+=`<button class="ob-skip" onclick="finishOnboarding()">Skip for now</button>`;
+
+  html+='</div>';
+  document.getElementById('obContent').innerHTML=html;
+}
+
+function selectOb(el,val){
+  document.querySelectorAll('.ob-opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  obData[obQuestions[obStep].id]=val;
+  document.getElementById('obNextBtn').disabled=false;
+}
+
+function nextObStep(){
+  var q=obQuestions[obStep];
+  if(q.type==='input'){
+    var v=document.getElementById('obInp').value.trim();
+    if(v) obData[q.id]=v;
+  }
+  obStep++;
+  if(obStep>=obQuestions.length){
+    finishOnboarding();
+  } else {
+    renderObStep();
+  }
+}
+
+function finishOnboarding(){
+  if(window.currentUser){
+    localStorage.setItem('pn_onboard_'+window.currentUser.uid, JSON.stringify(obData));
+    // Save to Firestore too
+    db.collection('users').doc(window.currentUser.uid).set({profile:obData},{merge:true}).catch(()=>{});
+  }
+  // Animate out
+  document.getElementById('obFill').style.width='100%';
+  setTimeout(()=>{
+    showPage('pageDash');
+    loadPlans();
+  },600);
+}
+
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js">
+// ===== ONBOARDING =====
+var obStep=0;
+var obData={};
+var obQuestions=[
+  {
+    id:'class',
+    title:'What class are you in?',
+    sub:'We'll tailor your study plans to your curriculum.',
+    type:'options',
+    options:[
+      {ic:'📗',label:'Class 9'},
+      {ic:'📘',label:'Class 10'},
+      {ic:'📙',label:'Class 11'},
+      {ic:'📕',label:'Class 12'},
+      {ic:'🎓',label:'College 1st yr'},
+      {ic:'🏫',label:'College 2nd yr+'},
+    ]
+  },
+  {
+    id:'board',
+    title:'Which board do you follow?',
+    sub:'This helps us match your syllabus perfectly.',
+    type:'options',
+    options:[
+      {ic:'🇮🇳',label:'CBSE'},
+      {ic:'📋',label:'ICSE'},
+      {ic:'🏛️',label:'State Board'},
+      {ic:'🌍',label:'IB/Cambridge'},
+      {ic:'🎓',label:'University'},
+      {ic:'🤷',label:'Other'},
+    ]
+  },
+  {
+    id:'goal',
+    title:'What's your main goal?',
+    sub:'We'll focus your plans around what matters most.',
+    type:'options',
+    options:[
+      {ic:'🏆',label:'Ace exams'},
+      {ic:'📈',label:'Improve grades'},
+      {ic:'⏰',label:'Stop procrastinating'},
+      {ic:'🧠',label:'Actually understand'},
+      {ic:'🎯',label:'Get into college'},
+      {ic:'😤',label:'Stress less'},
+    ]
+  },
+  {
+    id:'hoursPerDay',
+    title:'How many hours can you study daily?',
+    sub:'Be honest — we'll build a realistic plan.',
+    type:'options',
+    options:[
+      {ic:'😴',label:'1-2 hours'},
+      {ic:'📚',label:'2-4 hours'},
+      {ic:'💪',label:'4-6 hours'},
+      {ic:'🔥',label:'6+ hours'},
+    ]
+  },
+  {
+    id:'location',
+    title:'Where are you from?',
+    sub:'We'll use local textbooks and exam patterns.',
+    type:'input',
+    placeholder:'City or State (e.g. Mumbai, Delhi, Chennai...)',
+  }
+];
+
+function startOnboarding(){
+  obStep=0;
+  obData={};
+  renderObStep();
+}
+
+function renderObStep(){
+  var q=obQuestions[obStep];
+  var pct=((obStep)/obQuestions.length*100);
+  document.getElementById('obFill').style.width=pct+'%';
+
+  var html=`<div class="ob-q">
+    <div class="ob-steps">${obQuestions.map((_,i)=>`<div class="ob-step-dot ${i<obStep?'done':i===obStep?'act':''}"></div>`).join('')}</div>
+    <div class="ob-q-title">${q.title}</div>
+    <div class="ob-q-sub">${q.sub}</div>`;
+
+  if(q.type==='options'){
+    html+=`<div class="ob-options" id="obOpts">`;
+    q.options.forEach((o,i)=>{
+      html+=`<div class="ob-opt" onclick="selectOb(this,'${o.label}')"><span class="opt-ic">${o.ic}</span>${o.label}</div>`;
+    });
+    html+=`</div>
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  } else {
+    html+=`<input class="ob-inp" id="obInp" type="text" placeholder="${q.placeholder}" oninput="document.getElementById('obNextBtn').disabled=this.value.trim().length<2">
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  }
+
+  if(obStep>0) html+=`<button class="ob-skip" onclick="obStep--;renderObStep()">← Back</button>`;
+  else html+=`<button class="ob-skip" onclick="finishOnboarding()">Skip for now</button>`;
+
+  html+='</div>';
+  document.getElementById('obContent').innerHTML=html;
+}
+
+function selectOb(el,val){
+  document.querySelectorAll('.ob-opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  obData[obQuestions[obStep].id]=val;
+  document.getElementById('obNextBtn').disabled=false;
+}
+
+function nextObStep(){
+  var q=obQuestions[obStep];
+  if(q.type==='input'){
+    var v=document.getElementById('obInp').value.trim();
+    if(v) obData[q.id]=v;
+  }
+  obStep++;
+  if(obStep>=obQuestions.length){
+    finishOnboarding();
+  } else {
+    renderObStep();
+  }
+}
+
+function finishOnboarding(){
+  if(window.currentUser){
+    localStorage.setItem('pn_onboard_'+window.currentUser.uid, JSON.stringify(obData));
+    // Save to Firestore too
+    db.collection('users').doc(window.currentUser.uid).set({profile:obData},{merge:true}).catch(()=>{});
+  }
+  // Animate out
+  document.getElementById('obFill').style.width='100%';
+  setTimeout(()=>{
+    showPage('pageDash');
+    loadPlans();
+  },600);
+}
+
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Clash+Display:wght@400;500;600;700&family=Syne:wght@400;600;700;800&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -283,6 +835,35 @@ textarea:focus{border-color:rgba(98,101,245,0.45);background:rgba(98,101,245,0.0
 .err{background:rgba(244,96,122,0.08);border:1px solid rgba(244,96,122,0.2);border-radius:12px;padding:13px 16px;color:var(--red);font-size:0.8rem;line-height:1.6;margin-top:12px;display:none;animation:scaleIn 0.3s ease both}
 .err.show{display:block}
 
+/* ===== ONBOARDING ===== */
+#pageOnboard{max-width:540px;margin:0 auto;padding:60px 20px 80px;text-align:center}
+.ob-wordmark{font-family:var(--font-display);font-size:2rem;font-weight:700;letter-spacing:-1px;margin-bottom:8px;animation:fadeDown 0.6s ease both}
+.ob-wordmark .wm-notes{background:linear-gradient(135deg,var(--indigo2),var(--violet));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.ob-title{font-family:var(--font-display);font-size:1.5rem;font-weight:700;letter-spacing:-0.5px;margin-bottom:8px;animation:fadeUp 0.6s ease 0.1s both}
+.ob-sub{font-size:0.85rem;color:var(--m1);margin-bottom:36px;line-height:1.7;animation:fadeUp 0.6s ease 0.15s both}
+.ob-steps{display:flex;gap:6px;justify-content:center;margin-bottom:36px;animation:fadeUp 0.6s ease 0.2s both}
+.ob-step-dot{width:8px;height:8px;border-radius:50%;background:var(--b2);transition:all 0.3s}
+.ob-step-dot.act{background:var(--indigo2);width:24px;border-radius:4px}
+.ob-step-dot.done{background:var(--green)}
+.ob-q{animation:pageIn 0.5s cubic-bezier(0.16,1,0.3,1) both}
+.ob-q-title{font-family:var(--font-head);font-size:1.1rem;font-weight:700;margin-bottom:6px}
+.ob-q-sub{font-size:0.8rem;color:var(--m1);margin-bottom:22px}
+.ob-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px}
+.ob-opt{background:var(--s1);border:2px solid var(--b1);border-radius:14px;padding:14px 12px;cursor:pointer;transition:all 0.25s;font-size:0.85rem;font-weight:500;color:var(--m1);text-align:center;font-family:var(--font-body)}
+.ob-opt:hover{border-color:rgba(98,101,245,0.4);color:var(--white);transform:translateY(-2px)}
+.ob-opt.sel{border-color:var(--indigo2);background:rgba(98,101,245,0.1);color:var(--white);box-shadow:0 0 0 3px rgba(98,101,245,0.12)}
+.ob-opt .opt-ic{font-size:1.5rem;display:block;margin-bottom:6px}
+.ob-inp{width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--b1);border-radius:12px;padding:14px 16px;color:var(--white);font-size:0.9rem;outline:none;font-family:var(--font-body);transition:all 0.2s;text-align:center;margin-bottom:20px}
+.ob-inp::placeholder{color:var(--m2)}
+.ob-inp:focus{border-color:rgba(98,101,245,0.45);box-shadow:0 0 0 3px rgba(98,101,245,0.07)}
+.ob-next{width:100%;background:linear-gradient(135deg,var(--indigo),var(--violet));color:white;border:none;padding:15px;border-radius:12px;font-family:var(--font-head);font-size:0.95rem;font-weight:700;cursor:pointer;transition:all 0.3s}
+.ob-next:hover{transform:translateY(-2px);box-shadow:0 12px 36px rgba(98,101,245,0.4)}
+.ob-next:disabled{opacity:0.4;cursor:not-allowed;transform:none}
+.ob-skip{background:none;border:none;color:var(--m2);font-size:0.75rem;cursor:pointer;margin-top:12px;font-family:var(--font-body);text-decoration:underline;display:block;width:100%}
+.ob-skip:hover{color:var(--m1)}
+.ob-progress{height:3px;background:var(--b1);border-radius:3px;margin-bottom:36px;overflow:hidden;animation:fadeIn 0.5s ease both}
+.ob-progress-fill{height:100%;background:linear-gradient(90deg,var(--indigo),var(--violet));border-radius:3px;transition:width 0.5s cubic-bezier(0.16,1,0.3,1)}
+
 @media(max-width:580px){
   nav{padding:0 14px}
   #pageDash,#pageNew{padding:20px 12px 60px}
@@ -307,7 +888,7 @@ textarea:focus{border-color:rgba(98,101,245,0.45);background:rgba(98,101,245,0.0
 
 <!-- ===== AUTH ===== -->
 <div class="page show" id="pageAuth">
-  <div id="pageAuth" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px">
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 20px">
     <div class="auth-wrap">
       <div class="auth-wordmark">
         <span class="wm-pro">Pro</span><span class="wm-notes">Notes</span>
@@ -342,6 +923,15 @@ textarea:focus{border-color:rgba(98,101,245,0.45);background:rgba(98,101,245,0.0
       <button class="new-btn" onclick="showNew()">✨ New Plan</button>
     </div>
     <div id="plansGrid" class="plans-grid"></div>
+  </div>
+</div>
+
+<!-- ===== ONBOARDING ===== -->
+<div class="page" id="pageOnboard">
+  <div style="max-width:540px;margin:0 auto;padding:60px 20px 80px;text-align:center">
+    <div class="ob-wordmark"><span class="wm-pro">Pro</span><span class="wm-notes">Notes</span></div>
+    <div class="ob-progress"><div class="ob-progress-fill" id="obFill" style="width:0%"></div></div>
+    <div id="obContent"></div>
   </div>
 </div>
 
@@ -467,7 +1057,6 @@ var pdfText='',hours=3,currentPlan=null;
 auth.onAuthStateChanged(u=>{
   window.currentUser=u;
   if(u){
-    showPage('pageDash');
     document.getElementById('navR').innerHTML=
       `<button class="nav-dash-btn" onclick="showPage('pageDash')">My Plans</button>
        <img class="nav-av" src="${u.photoURL||''}" onerror="this.style.display='none'">
@@ -475,7 +1064,15 @@ auth.onAuthStateChanged(u=>{
     var n=(u.displayName||'').split(' ')[0];
     document.getElementById('dashGreet').innerHTML=`Hey <span>${n}</span> 👋`;
     document.querySelector('.dash-sub').textContent='Here are your saved study plans';
-    loadPlans();
+    // Check if onboarding done
+    var onboardDone = localStorage.getItem('pn_onboard_'+u.uid);
+    if(!onboardDone){
+      showPage('pageOnboard');
+      startOnboarding();
+    } else {
+      showPage('pageDash');
+      loadPlans();
+    }
   } else {
     showPage('pageAuth');
     document.getElementById('navR').innerHTML='';
@@ -725,6 +1322,144 @@ function resetNew(){
   document.getElementById('errBox').className='err';
   clearFile();setStepper(1);window.scrollTo(0,0);
 }
+
+// ===== ONBOARDING =====
+var obStep=0;
+var obData={};
+var obQuestions=[
+  {
+    id:'class',
+    title:'What class are you in?',
+    sub:'We'll tailor your study plans to your curriculum.',
+    type:'options',
+    options:[
+      {ic:'📗',label:'Class 9'},
+      {ic:'📘',label:'Class 10'},
+      {ic:'📙',label:'Class 11'},
+      {ic:'📕',label:'Class 12'},
+      {ic:'🎓',label:'College 1st yr'},
+      {ic:'🏫',label:'College 2nd yr+'},
+    ]
+  },
+  {
+    id:'board',
+    title:'Which board do you follow?',
+    sub:'This helps us match your syllabus perfectly.',
+    type:'options',
+    options:[
+      {ic:'🇮🇳',label:'CBSE'},
+      {ic:'📋',label:'ICSE'},
+      {ic:'🏛️',label:'State Board'},
+      {ic:'🌍',label:'IB/Cambridge'},
+      {ic:'🎓',label:'University'},
+      {ic:'🤷',label:'Other'},
+    ]
+  },
+  {
+    id:'goal',
+    title:'What's your main goal?',
+    sub:'We'll focus your plans around what matters most.',
+    type:'options',
+    options:[
+      {ic:'🏆',label:'Ace exams'},
+      {ic:'📈',label:'Improve grades'},
+      {ic:'⏰',label:'Stop procrastinating'},
+      {ic:'🧠',label:'Actually understand'},
+      {ic:'🎯',label:'Get into college'},
+      {ic:'😤',label:'Stress less'},
+    ]
+  },
+  {
+    id:'hoursPerDay',
+    title:'How many hours can you study daily?',
+    sub:'Be honest — we'll build a realistic plan.',
+    type:'options',
+    options:[
+      {ic:'😴',label:'1-2 hours'},
+      {ic:'📚',label:'2-4 hours'},
+      {ic:'💪',label:'4-6 hours'},
+      {ic:'🔥',label:'6+ hours'},
+    ]
+  },
+  {
+    id:'location',
+    title:'Where are you from?',
+    sub:'We'll use local textbooks and exam patterns.',
+    type:'input',
+    placeholder:'City or State (e.g. Mumbai, Delhi, Chennai...)',
+  }
+];
+
+function startOnboarding(){
+  obStep=0;
+  obData={};
+  renderObStep();
+}
+
+function renderObStep(){
+  var q=obQuestions[obStep];
+  var pct=((obStep)/obQuestions.length*100);
+  document.getElementById('obFill').style.width=pct+'%';
+
+  var html=`<div class="ob-q">
+    <div class="ob-steps">${obQuestions.map((_,i)=>`<div class="ob-step-dot ${i<obStep?'done':i===obStep?'act':''}"></div>`).join('')}</div>
+    <div class="ob-q-title">${q.title}</div>
+    <div class="ob-q-sub">${q.sub}</div>`;
+
+  if(q.type==='options'){
+    html+=`<div class="ob-options" id="obOpts">`;
+    q.options.forEach((o,i)=>{
+      html+=`<div class="ob-opt" onclick="selectOb(this,'${o.label}')"><span class="opt-ic">${o.ic}</span>${o.label}</div>`;
+    });
+    html+=`</div>
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  } else {
+    html+=`<input class="ob-inp" id="obInp" type="text" placeholder="${q.placeholder}" oninput="document.getElementById('obNextBtn').disabled=this.value.trim().length<2">
+    <button class="ob-next" id="obNextBtn" onclick="nextObStep()" disabled>Continue →</button>`;
+  }
+
+  if(obStep>0) html+=`<button class="ob-skip" onclick="obStep--;renderObStep()">← Back</button>`;
+  else html+=`<button class="ob-skip" onclick="finishOnboarding()">Skip for now</button>`;
+
+  html+='</div>';
+  document.getElementById('obContent').innerHTML=html;
+}
+
+function selectOb(el,val){
+  document.querySelectorAll('.ob-opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  obData[obQuestions[obStep].id]=val;
+  document.getElementById('obNextBtn').disabled=false;
+}
+
+function nextObStep(){
+  var q=obQuestions[obStep];
+  if(q.type==='input'){
+    var v=document.getElementById('obInp').value.trim();
+    if(v) obData[q.id]=v;
+  }
+  obStep++;
+  if(obStep>=obQuestions.length){
+    finishOnboarding();
+  } else {
+    renderObStep();
+  }
+}
+
+function finishOnboarding(){
+  if(window.currentUser){
+    localStorage.setItem('pn_onboard_'+window.currentUser.uid, JSON.stringify(obData));
+    // Save to Firestore too
+    db.collection('users').doc(window.currentUser.uid).set({profile:obData},{merge:true}).catch(()=>{});
+  }
+  // Animate out
+  document.getElementById('obFill').style.width='100%';
+  setTimeout(()=>{
+    showPage('pageDash');
+    loadPlans();
+  },600);
+}
+
 </script>
 </body>
-        </html>
+</html>
